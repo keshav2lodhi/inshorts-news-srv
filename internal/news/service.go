@@ -2,17 +2,27 @@ package news
 
 import (
 	"context"
+	"sync"
 
 	"inshorts.com/inshorts-news-srv/internal/llm"
-	// "inshorts.com/inshorts-news-srv/internal/utils"
 )
 
+type ServiceAPI interface {
+	Search(ctx context.Context, q string, from, size int) (*ResponseData, error)
+	Nearby(ctx context.Context, lat, lon float64, radiusKm int64, from, size int) (*ResponseData, error)
+	ByCategory(ctx context.Context, cat string, from, size int) (*ResponseData, error)
+	BySource(ctx context.Context, src string, from, size int) (*ResponseData, error)
+	ByScore(ctx context.Context, minScore float64, from, size int) (*ResponseData, error)
+}
+
+var _ ServiceAPI = (*Service)(nil)
+
 type Service struct {
-	repo *Repository
+	repo RepositoryAPI
 	llm  llm.Client
 }
 
-func NewService(r *Repository, l llm.Client) *Service {
+func NewService(r RepositoryAPI, l llm.Client) *Service {
 	return &Service{repo: r, llm: l}
 }
 
@@ -22,9 +32,7 @@ func (s *Service) Search(ctx context.Context, q string, from int, size int) (*Re
 		return nil, err
 	}
 	// Enrich with LLM summary
-	for i := range result.Article {
-		result.Article[i].LLMSummary = s.llm.Summarize(result.Article[i].Description)
-	}
+	s.enrichWithLLMSummary(ctx, result)
 	return result, nil
 }
 
@@ -34,38 +42,71 @@ func (s *Service) Nearby(ctx context.Context, lat float64, lon float64, radiusKm
 		return nil, err
 	}
 
-	// Calculate distance for ranking
-	// for i := range articles {
-	// 	d := utils.DistanceKm(
-	// 		lat, lon,
-	// 		articles[i].Latitude,
-	// 		articles[i].Longitude,
-	// 	)
-	// 	articles[i].RelevanceScore = 1 / (1 + d) // closer = higher score
-	// }
-
-	// Sort by distance (implicitly via score)
-	// RankByScore(articles)
-
-	// if len(articles) > 5 {
-	// 	return articles[:5], nil
-	// }
-
 	// Enrich with LLM summary
-	for i := range result.Article {
-		result.Article[i].LLMSummary = s.llm.Summarize(result.Article[i].Description)
-	}
+	s.enrichWithLLMSummary(ctx, result)
 	return result, nil
 }
 
 func (s *Service) ByCategory(ctx context.Context, cat string, from int, size int) (*ResponseData, error) {
-	return s.repo.ByCategory(ctx, cat, from, size)
+	result, err := s.repo.ByCategory(ctx, cat, from, size)
+	if err != nil {
+		return nil, err
+	}
+
+	// Enrich with LLM summary
+	s.enrichWithLLMSummary(ctx, result)
+	return result, nil
 }
 
 func (s *Service) BySource(ctx context.Context, src string, from int, size int) (*ResponseData, error) {
-	return s.repo.BySource(ctx, src, from, size)
+	result, err := s.repo.BySource(ctx, src, from, size)
+	if err != nil {
+		return nil, err
+	}
+
+	// Enrich with LLM summary
+	s.enrichWithLLMSummary(ctx, result)
+	return result, nil
 }
 
 func (s *Service) ByScore(ctx context.Context, minScore float64, from int, size int) (*ResponseData, error) {
-	return s.repo.ByScore(ctx, minScore, from, size)
+	result, err := s.repo.ByScore(ctx, minScore, from, size)
+	if err != nil {
+		return nil, err
+	}
+
+	// Enrich with LLM summary
+	s.enrichWithLLMSummary(ctx, result)
+	return result, nil
+}
+
+// enrichWithLLMSummary enriches articles using LLM.
+// Fail-soft, context-aware, and parallelized.
+func (s *Service) enrichWithLLMSummary(ctx context.Context, data *ResponseData) {
+	if data == nil || len(data.Article) == 0 {
+		return
+	}
+
+	var wg sync.WaitGroup
+
+	for i := range data.Article {
+		wg.Add(1)
+		idx := i
+
+		go func() {
+			defer wg.Done()
+
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				summary, err := s.llm.Summarize(ctx, data.Article[idx].Description)
+				if err == nil {
+					data.Article[idx].LLMSummary = summary
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
 }

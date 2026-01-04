@@ -11,6 +11,14 @@ import (
 	"inshorts.com/inshorts-news-srv/internal/base"
 )
 
+type RepositoryAPI interface {
+	Search(ctx context.Context, q string, from, size int) (*ResponseData, error)
+	Nearby(ctx context.Context, lat, lon float64, radiusKm int64, from, size int) (*ResponseData, error)
+	ByCategory(ctx context.Context, cat string, from, size int) (*ResponseData, error)
+	BySource(ctx context.Context, src string, from, size int) (*ResponseData, error)
+	ByScore(ctx context.Context, minScore float64, from, size int) (*ResponseData, error)
+}
+
 type Repository struct {
 	es *elasticsearch.Client
 }

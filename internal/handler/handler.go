@@ -15,8 +15,14 @@ import (
 	"inshorts.com/inshorts-news-srv/internal/news"
 )
 
+// type Handler struct {
+// 	service  *news.Service
+// 	trending *trending.TrendingService
+// 	articles map[string]news.Article
+// }
+
 type Handler struct {
-	service  *news.Service
+	service  news.ServiceAPI
 	trending *trending.TrendingService
 	articles map[string]news.Article
 }
@@ -24,9 +30,23 @@ type Handler struct {
 func NewHandler(es *elasticsearch.Client, articles map[string]news.Article, trendingSvc *trending.TrendingService) *Handler {
 	repo := news.NewRepository(es)
 	llmClient := llm.NewMockClient()
+	service := news.NewService(repo, llmClient)
 
 	return &Handler{
-		service:  news.NewService(repo, llmClient),
+		service:  service,
+		trending: trendingSvc,
+		articles: articles,
+	}
+}
+
+// NewHandlerWithDeps is ONLY for tests
+func NewHandlerWithDeps(
+	service news.ServiceAPI,
+	trendingSvc *trending.TrendingService,
+	articles map[string]news.Article,
+) *Handler {
+	return &Handler{
+		service:  service,
 		trending: trendingSvc,
 		articles: articles,
 	}
