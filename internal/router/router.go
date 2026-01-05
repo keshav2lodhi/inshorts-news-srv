@@ -18,8 +18,8 @@ import (
 )
 
 // CreateRoutes inits all routes related to the application
-func CreateRoutes(router fiber.Router, es *elasticsearch.Client, articles map[string]news.Article, trendingSvc *trending.TrendingService) {
-	h := handler.NewHandler(es, articles, trendingSvc)
+func CreateRoutes(router fiber.Router, es *elasticsearch.Client, newsService *news.Service, trendingSvc *trending.TrendingService, articles map[string]news.Article) {
+	h := handler.NewHandler(es, newsService, trendingSvc, articles)
 
 	router.Get("/ping", handler.Ping)
 

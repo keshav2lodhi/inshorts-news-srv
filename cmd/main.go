@@ -13,6 +13,8 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"inshorts.com/inshorts-news-srv/internal/app"
+	"inshorts.com/inshorts-news-srv/internal/base"
+	"inshorts.com/inshorts-news-srv/internal/llm"
 
 	// "inshorts.com/inshorts-news-srv/internal/configs"
 	"inshorts.com/inshorts-news-srv/internal/news"
@@ -32,17 +34,18 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Validate the ENV configs in production before starting the app
 	// err := configs.Initialize()
 	// if err != nil {
 	// 	logger.Fatal().Err(err).Msg("loading configs failed")
 	// }
 
 	// I hardcoded locally, but production reads from env/secret manager.
-	username := os.Getenv("ES_USERNAME")
+	username := os.Getenv(base.EnvESUserName)
 	if username == "" {
 		username = "elastic"
 	}
-	password := os.Getenv("ES_PASSWORD")
+	password := os.Getenv(base.EnvESPassword)
 	if password == "" {
 		password = "UMEFncAL6JL_kBNauzej"
 	}
@@ -74,20 +77,29 @@ func main() {
 	}
 	defer res.Body.Close()
 
-	// --- Load articles once at startup ---
-	articleRepo := news.NewRepository(es)
-	articles, err := articleRepo.LoadAllArticles(ctx)
+	// Load articles once at startup
+	newsRepo := news.NewRepository(es)
+	articles, err := newsRepo.LoadAllArticles(ctx)
 	if err != nil {
 		logger.Fatal().Err(err).Msgf("failed to load articles: %v", err)
 	}
 
-	// Trending service
-	trendingSvc := trending.NewTrendingService()
+	// LLM Client (OpenRouter)
+	openRouterKey := os.Getenv(base.EnvOpenRouterAPIKey)
+	if openRouterKey == "" {
+		openRouterKey = "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"
+	}
+	llmClient := llm.NewOpenRouterClient(openRouterKey)
+
+	// Service
+	newsService := news.NewService(newsRepo, llmClient)
+	trendingSvc := trending.NewTrendingService(newsService)
+
 	// Start background event stream simulation
-	go trendingSvc.StartEventSimulation(articles)
+	go trendingSvc.StartEventSimulation(ctx, articles)
 
 	// create service
-	port := os.Getenv("PORT")
+	port := os.Getenv(base.EnvPort)
 	if port == "" {
 		port = "3000"
 	}
@@ -105,5 +117,5 @@ func main() {
 	}()
 
 	logger.Info().Msg("service starting...")
-	server.Start(&logger, port, es, articles, trendingSvc)
+	server.Start(&logger, port, es, newsService, trendingSvc, articles)
 }

@@ -24,7 +24,7 @@ func New() *App {
 	}
 }
 
-func (app *App) Start(log *zerolog.Logger, port string, es *elasticsearch.Client, articles map[string]news.Article, trendingSvc *trending.TrendingService) {
+func (app *App) Start(log *zerolog.Logger, port string, es *elasticsearch.Client, newsService *news.Service, trendingSvc *trending.TrendingService, articles map[string]news.Article) {
 	// set 1 MB headersize
 	app.server.Server().ReadBufferSize = 1 * 1024 * 1024
 
@@ -47,7 +47,7 @@ func (app *App) Start(log *zerolog.Logger, port string, es *elasticsearch.Client
 	}
 
 	routes := app.server.Group(contextPath)
-	router.CreateRoutes(routes, es, articles, trendingSvc)
+	router.CreateRoutes(routes, es, newsService, trendingSvc, articles)
 
 	log.Info().Msgf("service listening on :%s", port)
 	err := app.server.Listen(":" + port)

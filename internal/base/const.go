@@ -3,18 +3,18 @@ package base
 import "time"
 
 const (
-	ServiceName    = "inshorts-news-srv" // ServiceName
-	PropSystem     = "system"            // PropSystem log property system
-	HdrXRefNo      = "x_ref_number"      // Header attribute which holds x-ref-number value to trace in logs
-	EnvLogLevel    = "LOG_LEVEL"         // Log level
-	EnvPort        = "PORT"              // Service address e.g. 3000
-	EnvContextPath = "CONTEXT_PATH"      // Context path
-	EnvAPIKey      = "API_KEY"           // apikey
-	EnvESUserName  = "ES_USERNAME"       // ES user name
-	EnvESPassword  = "ES_PASSWORD"       // ES Password
-	EnvESUrl       = "ES_URL"            // ES URL
-	Env            = "ENV"               // ENV
-	ESIndex        = "inshorts-news"     // ES index name
+	ServiceName         = "inshorts-news-srv"  // ServiceName
+	PropSystem          = "system"             // PropSystem log property system
+	HdrXRefNo           = "x_ref_number"       // Header attribute which holds x-ref-number value to trace in logs
+	EnvLogLevel         = "LOG_LEVEL"          // Log level
+	EnvPort             = "PORT"               // Service address e.g. 3000
+	EnvContextPath      = "CONTEXT_PATH"       // Context path
+	EnvAPIKey           = "API_KEY"            // apikey
+	EnvESUserName       = "ES_USERNAME"        // ES user name
+	EnvESPassword       = "ES_PASSWORD"        // ES Password
+	EnvESUrl            = "ES_URL"             // ES URL
+	EnvOpenRouterAPIKey = "OPENROUTER_API_KEY" // Openrouter API key
+	ESIndex             = "inshorts-news"      // ES index name
 )
 
 // response messages

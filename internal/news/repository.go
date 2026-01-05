@@ -8,6 +8,7 @@ import (
 
 	"github.com/elastic/go-elasticsearch/v9"
 	"github.com/elastic/go-elasticsearch/v9/esapi"
+	"github.com/rs/zerolog/log"
 	"inshorts.com/inshorts-news-srv/internal/base"
 )
 
@@ -50,7 +51,7 @@ func NewRepository(es *elasticsearch.Client) *Repository {
 	return &Repository{es: es}
 }
 
-func (r *Repository) Search(ctx context.Context, queryParam string, from int, size int) (*ResponseData, error) {
+func (r *Repository) Search(ctx context.Context, queryParam string, from, size int) (*ResponseData, error) {
 	// ES DLS query
 	query := map[string]interface{}{
 		"query": map[string]interface{}{
@@ -58,18 +59,21 @@ func (r *Repository) Search(ctx context.Context, queryParam string, from int, si
 				"query": map[string]interface{}{
 					"multi_match": map[string]interface{}{
 						"query": queryParam,
+						"type":  "best_fields",
 						"fields": []string{
-							"title^2",
-							"description",
+							"title^3",
+							"description^2",
+							"llm_summary",
 						},
+						"operator": "and",
 					},
 				},
 				"functions": []map[string]interface{}{
 					{
 						"field_value_factor": map[string]interface{}{
 							"field":   "relevance_score",
-							"factor":  1.0,
-							"missing": 0,
+							"factor":  1.2,
+							"missing": 0.1,
 						},
 					},
 				},
@@ -79,25 +83,32 @@ func (r *Repository) Search(ctx context.Context, queryParam string, from int, si
 		},
 	}
 
+	jsonData, err := json.Marshal(query)
+	if err != nil {
+		log.Info().Caller().Msgf("error marshalling search query JSON: (%v)", err)
+	}
+	log.Info().Caller().Msgf("query for search is: (%s)", string(jsonData))
+
 	data, err := r.executeSearch(ctx, query, from, size)
 	if err != nil {
 		return nil, err
 	}
-
 	return data, nil
 }
 
-func (r *Repository) Nearby(ctx context.Context, lat float64, lon float64, radiusKm int64, from int, size int) (*ResponseData, error) {
+func (r *Repository) Nearby(ctx context.Context, lat, lon float64, radiusKm int64, from, size int) (*ResponseData, error) {
 	// ES DLS query
 	query := map[string]interface{}{
 		"query": map[string]interface{}{
 			"bool": map[string]interface{}{
-				"filter": map[string]interface{}{
-					"geo_distance": map[string]interface{}{
-						"distance": fmt.Sprintf("%dkm", radiusKm),
-						"location": map[string]interface{}{
-							"lat": lat,
-							"lon": lon,
+				"filter": []map[string]interface{}{
+					{
+						"geo_distance": map[string]interface{}{
+							"distance": fmt.Sprintf("%dkm", radiusKm),
+							"location": map[string]interface{}{
+								"lat": lat,
+								"lon": lon,
+							},
 						},
 					},
 				},
@@ -114,8 +125,19 @@ func (r *Repository) Nearby(ctx context.Context, lat float64, lon float64, radiu
 					"unit":  "km",
 				},
 			},
+			{
+				"publication_date": map[string]interface{}{
+					"order": "desc",
+				},
+			},
 		},
 	}
+
+	jsonData, err := json.Marshal(query)
+	if err != nil {
+		log.Info().Caller().Msgf("error marshalling nearby query JSON: (%v)", err)
+	}
+	log.Info().Caller().Msgf("query for nearby is: (%s)", string(jsonData))
 
 	data, err := r.executeSearch(ctx, query, from, size)
 	if err != nil {
@@ -124,12 +146,15 @@ func (r *Repository) Nearby(ctx context.Context, lat float64, lon float64, radiu
 	return data, nil
 }
 
-func (r *Repository) ByCategory(ctx context.Context, cat string, from int, size int) (*ResponseData, error) {
+func (r *Repository) ByCategory(ctx context.Context, cat string, from, size int) (*ResponseData, error) {
 	// ES DLS query
 	query := map[string]interface{}{
 		"query": map[string]interface{}{
-			"term": map[string]interface{}{
-				"category": cat,
+			"match": map[string]interface{}{
+				"category": map[string]interface{}{
+					"query":    cat,
+					"operator": "and",
+				},
 			},
 		},
 		"sort": map[string]interface{}{
@@ -137,6 +162,12 @@ func (r *Repository) ByCategory(ctx context.Context, cat string, from int, size 
 		},
 	}
 
+	jsonData, err := json.Marshal(query)
+	if err != nil {
+		log.Info().Caller().Msgf("error marshalling category query JSON: (%v)", err)
+	}
+	log.Info().Caller().Msgf("query for category is: (%s)", string(jsonData))
+
 	data, err := r.executeSearch(ctx, query, from, size)
 	if err != nil {
 		return nil, err
@@ -144,12 +175,15 @@ func (r *Repository) ByCategory(ctx context.Context, cat string, from int, size 
 	return data, nil
 }
 
-func (r *Repository) BySource(ctx context.Context, src string, from int, size int) (*ResponseData, error) {
+func (r *Repository) BySource(ctx context.Context, src string, from, size int) (*ResponseData, error) {
 	// ES DLS query
 	query := map[string]interface{}{
 		"query": map[string]interface{}{
-			"term": map[string]interface{}{
-				"source_name": src,
+			"match": map[string]interface{}{
+				"source_name": map[string]interface{}{
+					"query":    src,
+					"operator": "and",
+				},
 			},
 		},
 		"sort": map[string]interface{}{
@@ -157,6 +191,12 @@ func (r *Repository) BySource(ctx context.Context, src string, from int, size in
 		},
 	}
 
+	jsonData, err := json.Marshal(query)
+	if err != nil {
+		log.Info().Caller().Msgf("error marshalling source query JSON: (%v)", err)
+	}
+	log.Info().Caller().Msgf("query for source is: (%s)", string(jsonData))
+
 	data, err := r.executeSearch(ctx, query, from, size)
 	if err != nil {
 		return nil, err
@@ -164,8 +204,7 @@ func (r *Repository) BySource(ctx context.Context, src string, from int, size in
 	return data, nil
 }
 
-func (r *Repository) ByScore(ctx context.Context, minScore float64, from int, size int) (*ResponseData, error) {
-	// ES DLS query
+func (r *Repository) ByScore(ctx context.Context, minScore float64, from, size int) (*ResponseData, error) {
 	query := map[string]interface{}{
 		"query": map[string]interface{}{
 			"range": map[string]interface{}{
@@ -174,10 +213,17 @@ func (r *Repository) ByScore(ctx context.Context, minScore float64, from int, si
 				},
 			},
 		},
-		"sort": map[string]interface{}{
-			"relevance_score": "desc",
+		"sort": []map[string]interface{}{
+			{"relevance_score": "desc"},
+			{"publication_date": "desc"},
 		},
 	}
+
+	jsonData, err := json.Marshal(query)
+	if err != nil {
+		log.Info().Caller().Msgf("error marshalling score query JSON: (%v)", err)
+	}
+	log.Info().Caller().Msgf("query for score is: (%s)", string(jsonData))
 
 	data, err := r.executeSearch(ctx, query, from, size)
 	if err != nil {
@@ -207,7 +253,6 @@ func parseSearchResponse(res *esapi.Response) (
 	articles = make([]Article, 0, len(esResp.Hits.Hits))
 	for _, hit := range esResp.Hits.Hits {
 		article := hit.Source
-		// fmt.Println("the score is :", hit.Score)
 		articles = append(articles, article)
 	}
 

@@ -11,15 +11,8 @@ import (
 	"inshorts.com/inshorts-news-srv/internal/base"
 	"inshorts.com/inshorts-news-srv/internal/trending"
 
-	"inshorts.com/inshorts-news-srv/internal/llm"
 	"inshorts.com/inshorts-news-srv/internal/news"
 )
-
-// type Handler struct {
-// 	service  *news.Service
-// 	trending *trending.TrendingService
-// 	articles map[string]news.Article
-// }
 
 type Handler struct {
 	service  news.ServiceAPI
@@ -27,13 +20,9 @@ type Handler struct {
 	articles map[string]news.Article
 }
 
-func NewHandler(es *elasticsearch.Client, articles map[string]news.Article, trendingSvc *trending.TrendingService) *Handler {
-	repo := news.NewRepository(es)
-	llmClient := llm.NewMockClient()
-	service := news.NewService(repo, llmClient)
-
+func NewHandler(es *elasticsearch.Client, newsService *news.Service, trendingSvc *trending.TrendingService, articles map[string]news.Article) *Handler {
 	return &Handler{
-		service:  service,
+		service:  newsService,
 		trending: trendingSvc,
 		articles: articles,
 	}
@@ -59,12 +48,24 @@ func (h *Handler) Search(c *fiber.Ctx) error {
 		return r.RespondWithError(fiber.StatusBadRequest, base.CodeInvalidData, "query parameter 'q' is required")
 	}
 
+	// Optional user location
+	var latPtr, lonPtr *float64
+	if lat := c.Query("lat"); lat != "" {
+		if v, err := strconv.ParseFloat(lat, 64); err == nil {
+			latPtr = &v
+		}
+	}
+	if lon := c.Query("lon"); lon != "" {
+		if v, err := strconv.ParseFloat(lon, 64); err == nil {
+			lonPtr = &v
+		}
+	}
+
 	from, size, err := parsePagination(c)
 	if err != nil {
 		return r.RespondWithError(fiber.StatusBadRequest, base.CodeInvalidData, err.Error())
 	}
-
-	result, err := h.service.Search(c.Context(), query, from, size)
+	result, err := h.service.Search(c.Context(), query, latPtr, lonPtr, from, size)
 	if err != nil {
 		return r.RespondWithError(fiber.StatusInternalServerError, base.CodeInternalError, err.Error())
 	}
