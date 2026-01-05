@@ -1,219 +1,183 @@
 package handler
 
-// import (
-// 	"context"
-// 	"net/http"
-// 	"net/http/httptest"
-// 	"testing"
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"testing"
 
-// 	"github.com/gofiber/fiber/v2"
-// 	"github.com/stretchr/testify/assert"
-// 	"github.com/stretchr/testify/require"
-// 	"inshorts.com/inshorts-news-srv/internal/news"
-// )
+	"github.com/gofiber/fiber/v2"
+	"github.com/stretchr/testify/assert"
 
-// type mockNewsService struct {
-// 	searchFn   func(context.Context, string, int, int) (*news.ResponseData, error)
-// 	nearbyFn   func(context.Context, float64, float64, int64, int, int) (*news.ResponseData, error)
-// 	categoryFn func(context.Context, string, int, int) (*news.ResponseData, error)
-// 	sourceFn   func(context.Context, string, int, int) (*news.ResponseData, error)
-// 	scoreFn    func(context.Context, float64, int, int) (*news.ResponseData, error)
-// }
+	"inshorts.com/inshorts-news-srv/internal/base"
+	"inshorts.com/inshorts-news-srv/internal/news"
+	"inshorts.com/inshorts-news-srv/internal/trending"
+)
 
-// func (m *mockNewsService) Search(ctx context.Context, q string, from, size int) (*news.ResponseData, error) {
-// 	return m.searchFn(ctx, q, from, size)
-// }
-// func (m *mockNewsService) Nearby(ctx context.Context, lat, lon float64, radiusKm int64, from, size int) (*news.ResponseData, error) {
-// 	return m.nearbyFn(ctx, lat, lon, radiusKm, from, size)
-// }
-// func (m *mockNewsService) ByCategory(ctx context.Context, cat string, from, size int) (*news.ResponseData, error) {
-// 	return m.categoryFn(ctx, cat, from, size)
-// }
-// func (m *mockNewsService) BySource(ctx context.Context, src string, from, size int) (*news.ResponseData, error) {
-// 	return m.sourceFn(ctx, src, from, size)
-// }
-// func (m *mockNewsService) ByScore(ctx context.Context, minScore float64, from, size int) (*news.ResponseData, error) {
-// 	return m.scoreFn(ctx, minScore, from, size)
-// }
+type mockNewsService struct {
+	searchFn   func(ctx context.Context, q string, lat, lon *float64, from, size int) (*news.ResponseData, error)
+	nearbyFn   func(ctx context.Context, lat, lon float64, radius int64, from, size int) (*news.ResponseData, error)
+	categoryFn func(ctx context.Context, cat string, from, size int) (*news.ResponseData, error)
+	sourceFn   func(ctx context.Context, src string, from, size int) (*news.ResponseData, error)
+	scoreFn    func(ctx context.Context, min float64, from, size int) (*news.ResponseData, error)
+}
 
-// func setupTestApp(handlerFunc fiber.Handler) *fiber.App {
-// 	app := fiber.New()
-// 	app.Get("/", handlerFunc)
-// 	return app
-// }
+func (m *mockNewsService) Search(ctx context.Context, q string, lat, lon *float64, from, size int) (*news.ResponseData, error) {
+	return m.searchFn(ctx, q, lat, lon, from, size)
+}
+func (m *mockNewsService) Nearby(ctx context.Context, lat, lon float64, radius int64, from, size int) (*news.ResponseData, error) {
+	return m.nearbyFn(ctx, lat, lon, radius, from, size)
+}
+func (m *mockNewsService) ByCategory(ctx context.Context, cat string, from, size int) (*news.ResponseData, error) {
+	return m.categoryFn(ctx, cat, from, size)
+}
+func (m *mockNewsService) BySource(ctx context.Context, src string, from, size int) (*news.ResponseData, error) {
+	return m.sourceFn(ctx, src, from, size)
+}
+func (m *mockNewsService) ByScore(ctx context.Context, min float64, from, size int) (*news.ResponseData, error) {
+	return m.scoreFn(ctx, min, from, size)
+}
 
-// func TestSearch_MissingQuery(t *testing.T) {
-// 	h := NewHandlerWithDeps(nil, nil, nil)
+func setupTestApp(h *Handler, route string, handler fiber.Handler) *fiber.App {
+	app := fiber.New()
+	app.Get(route, handler)
+	return app
+}
 
-// 	app := setupTestApp(h.Search)
-// 	req := httptest.NewRequest(http.MethodGet, "/?q=", nil)
+func successResponse() *news.ResponseData {
+	return &news.ResponseData{
+		Took:     10,
+		Total:    1,
+		Page:     1,
+		PageSize: 10,
+		Count:    1,
+		Article:  []news.Article{{ID: "1", Title: "test"}},
+	}
+}
 
-// 	resp, err := app.Test(req)
-// 	require.NoError(t, err)
-// 	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
-// }
+// Missing query - 400
+func TestSearch_MissingQuery(t *testing.T) {
+	h := NewHandlerWithDeps(&mockNewsService{}, nil, nil)
 
-// func TestSearch_Success(t *testing.T) {
-// 	mockSvc := &mockNewsService{
-// 		searchFn: func(ctx context.Context, q string, from, size int) (*news.ResponseData, error) {
-// 			return &news.ResponseData{
-// 				Article: []news.Article{
-// 					{ID: "a1", Title: "Test"},
-// 				},
-// 			}, nil
-// 		},
-// 	}
+	app := setupTestApp(h, "/search", h.Search)
+	req := httptest.NewRequest(http.MethodGet, "/search", nil)
 
-// 	h := NewHandlerWithDeps(mockSvc, nil, nil)
+	resp, _ := app.Test(req)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
 
-// 	app := setupTestApp(h.Search)
+// Successful search - 200
+func TestSearch_Success(t *testing.T) {
+	mockSvc := &mockNewsService{
+		searchFn: func(ctx context.Context, q string, lat, lon *float64, from, size int) (*news.ResponseData, error) {
+			assert.Equal(t, "elon musk", q)
+			return successResponse(), nil
+		},
+	}
 
-// 	req := httptest.NewRequest(http.MethodGet, "/?q=test", nil)
-// 	resp, err := app.Test(req)
+	h := NewHandlerWithDeps(mockSvc, nil, nil)
+	app := setupTestApp(h, "/search", h.Search)
 
-// 	require.NoError(t, err)
-// 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
-// }
+	req := httptest.NewRequest(http.MethodGet, "/search?q=elon+musk", nil)
+	resp, _ := app.Test(req)
 
-// func TestNearby_Success(t *testing.T) {
-// 	mockSvc := &mockNewsService{
-// 		nearbyFn: func(ctx context.Context, lat, lon float64, radiusKm int64, from, size int) (*news.ResponseData, error) {
-// 			return &news.ResponseData{
-// 				Article: []news.Article{{ID: "n1"}},
-// 			}, nil
-// 		},
-// 	}
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-// 	h := NewHandlerWithDeps(mockSvc, nil, nil)
-// 	app := setupTestApp(h.Nearby)
+	var body map[string]interface{}
+	_ = json.NewDecoder(resp.Body).Decode(&body)
+	assert.True(t, body["success"].(bool))
+}
 
-// 	req := httptest.NewRequest(http.MethodGet,
-// 		"/?lat=12.9&lon=77.6&radiusKm=10",
-// 		nil,
-// 	)
+// Service error - 500
+func TestSearch_ServiceError(t *testing.T) {
+	mockSvc := &mockNewsService{
+		searchFn: func(ctx context.Context, q string, lat, lon *float64, from, size int) (*news.ResponseData, error) {
+			return nil, errors.New("boom")
+		},
+	}
 
-// 	resp, err := app.Test(req)
-// 	require.NoError(t, err)
-// 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-// }
+	h := NewHandlerWithDeps(mockSvc, nil, nil)
+	app := setupTestApp(h, "/search", h.Search)
 
-// func TestNearby_InvalidLatitude(t *testing.T) {
-// 	h := NewHandlerWithDeps(nil, nil, nil)
-// 	app := setupTestApp(h.Nearby)
+	req := httptest.NewRequest(http.MethodGet, "/search?q=test", nil)
+	resp, _ := app.Test(req)
 
-// 	req := httptest.NewRequest(http.MethodGet,
-// 		"/?lat=abc&lon=77&radiusKm=10",
-// 		nil,
-// 	)
+	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+}
 
-// 	resp, _ := app.Test(req)
-// 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-// }
+// Category Handler Tests
+func TestCategory_MissingParam(t *testing.T) {
+	h := NewHandlerWithDeps(&mockNewsService{}, nil, nil)
+	app := setupTestApp(h, "/category", h.Category)
 
-// func TestCategory_Success(t *testing.T) {
-// 	mockSvc := &mockNewsService{
-// 		categoryFn: func(ctx context.Context, cat string, from, size int) (*news.ResponseData, error) {
-// 			return &news.ResponseData{
-// 				Article: []news.Article{{ID: "c1"}},
-// 			}, nil
-// 		},
-// 	}
+	req := httptest.NewRequest(http.MethodGet, "/category", nil)
+	resp, _ := app.Test(req)
 
-// 	h := NewHandlerWithDeps(mockSvc, nil, nil)
-// 	app := setupTestApp(h.Category)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
 
-// 	req := httptest.NewRequest(http.MethodGet, "/?category=tech", nil)
-// 	resp, _ := app.Test(req)
+func TestCategory_Success(t *testing.T) {
+	mockSvc := &mockNewsService{
+		categoryFn: func(ctx context.Context, cat string, from, size int) (*news.ResponseData, error) {
+			assert.Equal(t, "technology", cat)
+			return successResponse(), nil
+		},
+	}
 
-// 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-// }
+	h := NewHandlerWithDeps(mockSvc, nil, nil)
+	app := setupTestApp(h, "/category", h.Category)
 
-// func TestCategory_MissingCategory(t *testing.T) {
-// 	h := NewHandlerWithDeps(nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/category?category=technology", nil)
+	resp, _ := app.Test(req)
 
-// 	app := setupTestApp(h.Category)
-// 	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
 
-// 	resp, err := app.Test(req)
-// 	require.NoError(t, err)
-// 	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
-// }
+// Source Handler Test
+func TestSource_Success(t *testing.T) {
+	mockSvc := &mockNewsService{
+		sourceFn: func(ctx context.Context, src string, from, size int) (*news.ResponseData, error) {
+			assert.Equal(t, "RT International", src)
+			return successResponse(), nil
+		},
+	}
 
-// func TestSource_Success(t *testing.T) {
-// 	mockSvc := &mockNewsService{
-// 		sourceFn: func(ctx context.Context, src string, from, size int) (*news.ResponseData, error) {
-// 			return &news.ResponseData{
-// 				Article: []news.Article{{ID: "s1"}},
-// 			}, nil
-// 		},
-// 	}
+	h := NewHandlerWithDeps(mockSvc, nil, nil)
+	app := setupTestApp(h, "/source", h.Source)
 
-// 	h := NewHandlerWithDeps(mockSvc, nil, nil)
-// 	app := setupTestApp(h.Source)
+	req := httptest.NewRequest(http.MethodGet, "/source?source=RT+International", nil)
+	resp, _ := app.Test(req)
 
-// 	req := httptest.NewRequest(http.MethodGet, "/?source=reuters", nil)
-// 	resp, _ := app.Test(req)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
 
-// 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-// }
+// Score Handler Test
+func TestScore_DefaultMinScore(t *testing.T) {
+	mockSvc := &mockNewsService{
+		scoreFn: func(ctx context.Context, min float64, from, size int) (*news.ResponseData, error) {
+			assert.Equal(t, base.DefaultMinScore, min)
+			return successResponse(), nil
+		},
+	}
 
-// func TestScore_DefaultMinScore(t *testing.T) {
-// 	mockSvc := &mockNewsService{
-// 		scoreFn: func(ctx context.Context, minScore float64, from, size int) (*news.ResponseData, error) {
-// 			assert.Equal(t, 0.7, minScore)
-// 			return &news.ResponseData{}, nil
-// 		},
-// 	}
+	h := NewHandlerWithDeps(mockSvc, nil, nil)
+	app := setupTestApp(h, "/score", h.Score)
 
-// 	h := NewHandlerWithDeps(mockSvc, nil, nil)
-// 	app := setupTestApp(h.Score)
+	req := httptest.NewRequest(http.MethodGet, "/score", nil)
+	resp, _ := app.Test(req)
 
-// 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-// 	resp, _ := app.Test(req)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
 
-// 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-// }
+// Trending Handler Test
+func TestTrending_InvalidLat(t *testing.T) {
+	h := NewHandlerWithDeps(nil, &trending.TrendingService{}, nil)
+	app := setupTestApp(h, "/trending", h.Trending)
 
-// func TestParsePagination_Overflow(t *testing.T) {
-// 	app := fiber.New()
-// 	app.Get("/", func(c *fiber.Ctx) error {
-// 		_, _, err := parsePagination(c)
-// 		assert.Error(t, err)
-// 		return nil
-// 	})
+	req := httptest.NewRequest(http.MethodGet, "/trending?lat=abc&lon=12", nil)
+	resp, _ := app.Test(req)
 
-// 	req := httptest.NewRequest(http.MethodGet, "/?from=9999&size=9999", nil)
-// 	_, err := app.Test(req)
-// 	require.NoError(t, err)
-// }
-
-// type mockTrendingService struct {
-// 	fn func(context.Context, float64, float64, int, map[string]news.Article) (*news.ResponseData, error)
-// }
-
-// // func (m *mockTrendingService) Trending(
-// // 	ctx context.Context,
-// // 	lat, lon float64,
-// // 	limit int,
-// // 	articles map[string]news.Article,
-// // ) (*news.ResponseData, error) {
-// // 	return m.fn(ctx, lat, lon, limit, articles)
-// // }
-
-// // func TestTrending_Success(t *testing.T) {
-// // 	mockTrending := &mockTrendingService{
-// // 		fn: func(ctx context.Context, lat, lon float64, limit int, articles map[string]news.Article) (*news.ResponseData, error) {
-// // 			return &news.ResponseData{
-// // 				Article: []news.Article{{ID: "t1"}},
-// // 			}, nil
-// // 		},
-// // 	}
-
-// // 	h := NewHandlerWithDeps(nil, mockTrending, map[string]news.Article{})
-// // 	app := setupTestApp(h.Trending)
-
-// // 	req := httptest.NewRequest(http.MethodGet, "/?lat=12&lon=77", nil)
-// // 	resp, _ := app.Test(req)
-
-// // 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-// // }
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
