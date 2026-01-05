@@ -155,9 +155,12 @@ func (s *Service) EnrichWithLLMSummary(ctx context.Context, data *ResponseData) 
 				return
 			default:
 				summary, err := s.llm.Summarize(ctx, data.Article[idx].Description)
-				if err == nil {
-					data.Article[idx].LLMSummary = summary
+				if err != nil {
+					// fail-soft: leave summary empty
+					return
 				}
+				// Safe write (per-index is fine, no shared mutation)
+				data.Article[idx].LLMSummary = summary
 			}
 		}()
 	}

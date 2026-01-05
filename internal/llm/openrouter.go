@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -126,8 +127,14 @@ func (c *OpenRouterClient) callLLM(ctx context.Context, prompt string) (string, 
 		},
 	}
 
-	data, _ := json.Marshal(reqBody)
-	req, _ := http.NewRequestWithContext(ctx, "POST", openRouterURL, bytes.NewBuffer(data))
+	data, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", openRouterURL, bytes.NewBuffer(data))
+	if err != nil {
+		return "", err
+	}
 
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -138,6 +145,16 @@ func (c *OpenRouterClient) callLLM(ctx context.Context, prompt string) (string, 
 	}
 	defer resp.Body.Close()
 
+	// Handle non-200 responses
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf(
+			"openrouter error: status=%d body=%s",
+			resp.StatusCode,
+			string(body),
+		)
+	}
+
 	var res struct {
 		Choices []struct {
 			Message struct {
@@ -146,6 +163,12 @@ func (c *OpenRouterClient) callLLM(ctx context.Context, prompt string) (string, 
 		} `json:"choices"`
 	}
 
-	json.NewDecoder(resp.Body).Decode(&res)
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return "", err
+	}
+
+	if len(res.Choices) == 0 {
+		return "", fmt.Errorf("openrouter returned empty choices")
+	}
 	return res.Choices[0].Message.Content, nil
 }

@@ -87,7 +87,7 @@ func main() {
 	// LLM Client (OpenRouter)
 	openRouterKey := os.Getenv(base.EnvOpenRouterAPIKey)
 	if openRouterKey == "" {
-		openRouterKey = "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"
+		openRouterKey = "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"
 	}
 	llmClient := llm.NewOpenRouterClient(openRouterKey)
 
